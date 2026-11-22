@@ -1,0 +1,9 @@
+# Python deps for the Vercel function (web/api/index.py). No torch: fastembed (ONNX) embeds queries.
+footnote @ https://github.com/vtalla-hq/footnote/archive/refs/heads/main.zip
+fastapi>=0.115
+fastembed>=0.4
+numpy>=1.26
+psycopg[binary]>=3.2
+pgvector>=0.3
+python-dotenv>=1.0
+requests>=2.32

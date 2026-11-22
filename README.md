@@ -107,6 +107,17 @@ The full table, CIs, ingest cost and the recommendation are in [results/SUMMARY.
 
 `*` means the 95% paired-bootstrap CI excludes 0. Hybrid hurts and reranking helps, but with 150 questions only the hybrid drop is significant.
 
+## CI regression gate (Phase 5)
+
+`.github/workflows/retrieval-gate.yml` runs on every PR. It's retrieval only (no LLM calls, $0):
+
+1. Installs CPU torch and runs `pytest`.
+2. `python -m scripts.ci_gate` **re-ingests a fixed subset with the PR's code**: 19 filings, 999 pages, covering 53 of the 150 questions across all four doc types (`configs/ci.yaml`). The data goes into a throwaway table `footnote.ci_<run id>`.
+3. That table has no HNSW index, so search is exact and deterministic. The gate runs the retrieval eval on those 53 questions and drops the table afterwards.
+4. It writes a markdown diff vs `results/baseline.json` to the job summary and **fails if recall@10 drops by more than 1 point.**
+
+The gate re-ingests rather than querying the existing table because a PR that breaks parsing or chunking would otherwise go unnoticed. The baseline is produced the same way on CPU (`python -m scripts.ci_gate --write-baseline` with `CUDA_VISIBLE_DEVICES=""`). It scores recall@10 0.660, and an unchanged re-run reproduces every metric exactly. The DB URL comes from the `SUPABASE_DB_URL` repo secret.
+
 ## Setup
 
 ```bash
