@@ -292,7 +292,7 @@ def parse_page(fpage, ppage, page_no: int) -> list[Element]:
     items: list[tuple[float, Element]] = []
     in_table: set[int] = set()
     layout_boxes = []
-    for s, e in []:  # DEMO: deliberately disable layout table detection (should fail the CI gate)
+    for s, e in find_layout_tables(rows):
         first_t = next(k for k in range(s, e) if _row_kind(rows[k]) == "T")
         md = rows_to_markdown(rows[first_t:e])
         if md:
