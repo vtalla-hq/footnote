@@ -1,0 +1,31 @@
+# CI regression gate (retrieval only, no LLM calls).
+# Re-ingests a fixed doc subset WITH THE PR'S CODE into a throwaway table (no HNSW -> exact,
+# deterministic search), runs the retrieval eval on the questions about those docs, and fails if
+# recall@10 drops more than `max_recall10_drop` vs results/baseline.json.
+# Subset: the 19 most question-dense filings that fit in ~1,000 pages (53 of 150 questions,
+# all four doc types), so a CPU runner finishes in minutes and the DB stays under budget.
+ingest_config: configs/ingest_256.yaml
+retrieval:
+  method: dense
+  k: 10
+max_recall10_drop: 0.01
+docs:
+  - 3M_2023Q2_10Q
+  - AMAZON_2017_10K
+  - AMCOR_2022_8K_dated-2022-07-01
+  - AMCOR_2023Q4_EARNINGS
+  - AMCOR_2023_10K
+  - AMD_2022_10K
+  - BESTBUY_2023_10K
+  - BESTBUY_2024Q2_10Q
+  - BOEING_2022_10K
+  - FOOTLOCKER_2022_8K_dated-2022-05-20
+  - FOOTLOCKER_2022_8K_dated_2022-08-19
+  - JOHNSON_JOHNSON_2022Q4_EARNINGS
+  - JOHNSON_JOHNSON_2023Q2_EARNINGS
+  - JOHNSON_JOHNSON_2023_8K_dated-2023-08-30
+  - MGMRESORTS_2022Q4_EARNINGS
+  - PEPSICO_2023Q1_EARNINGS
+  - PEPSICO_2023_8K_dated-2023-05-05
+  - Pfizer_2023Q2_10Q
+  - ULTABEAUTY_2023Q4_EARNINGS

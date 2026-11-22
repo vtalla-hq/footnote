@@ -22,3 +22,4 @@ node_modules/
 .next/
 .vercel/
 *.log
+results/ci_latest.json

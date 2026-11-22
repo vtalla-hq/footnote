@@ -75,30 +75,27 @@ def _parse_and_chunk(args) -> tuple[str, int, list[dict], float]:
     return doc_name, page_count(path), rows, time.perf_counter() - t0
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--limit", type=int, default=None, help="only the first N docs (smoke test)")
-    ap.add_argument("--no-db", action="store_true", help="parse/chunk/embed only")
-    ap.add_argument("--cold", action="store_true", help="ignore parse + embedding caches (true ingest cost)")
-    args = ap.parse_args()
-    cfg = load_config(args.config)
-    table = cfg["table"]
-
-    t_start = time.perf_counter()
+def available_docs() -> list[str]:
     qs = load_questions()
-    meta = doc_metadata(qs)
     report = json.loads(DOWNLOAD_REPORT.read_text()) if DOWNLOAD_REPORT.exists() else {"docs_failed": {}}
-    docs = [d for d in referenced_docs(qs) if d not in report["docs_failed"] and (PDF_DIR / f"{d}.pdf").exists()]
-    docs = docs[: args.limit] if args.limit else docs
+    return [d for d in referenced_docs(qs) if d not in report["docs_failed"] and (PDF_DIR / f"{d}.pdf").exists()]
+
+
+def ingest(cfg: dict, docs: list[str], table: str, *, workers: int = 8, cold: bool = False,
+           no_db: bool = False, hnsw: bool = True, prune_missing_docs: bool = True) -> dict:
+    """Parse, chunk, embed and upsert `docs` into footnote.<table>. Returns ingest stats.
+
+    hnsw=False builds no ANN index, so search is exact (deterministic) - used by the CI gate.
+    """
+    t_start = time.perf_counter()
+    meta = doc_metadata(load_questions())
     print(f"[{table}] ingesting {len(docs)} docs, chunk_size={cfg['chunk_size']} overlap={cfg['overlap']} "
           f"table_max={cfg['table_max']}")
 
-    jobs = [(d, meta[d], cfg["chunk_size"], cfg["overlap"], cfg["table_max"], args.cold) for d in docs]
+    jobs = [(d, meta[d], cfg["chunk_size"], cfg["overlap"], cfg["table_max"], cold) for d in docs]
     per_doc: dict[str, tuple[int, list[dict]]] = {}
     t0 = time.perf_counter()
-    with ProcessPoolExecutor(args.workers) as ex:
+    with ProcessPoolExecutor(workers) as ex:
         for n, (d, pages, rows, secs) in enumerate(ex.map(_parse_and_chunk, jobs), 1):
             per_doc[d] = (pages, rows)
             print(f"  [{n}/{len(docs)}] {d}: {pages} pages, {len(rows)} chunks ({secs:.1f}s)", flush=True)
@@ -108,8 +105,8 @@ def main() -> int:
 
     all_rows = [r for d in docs for r in per_doc[d][1]]
     t0 = time.perf_counter()
-    cache = EmbeddingCache(ROOT / "cache" / "embeddings_cold.sqlite") if args.cold else EmbeddingCache()
-    if args.cold:
+    cache = EmbeddingCache(ROOT / "cache" / "embeddings_cold.sqlite") if cold else EmbeddingCache()
+    if cold:
         cache.db.execute("delete from emb"); cache.db.commit()
     embs, computed = embed_passages([r["embed_text"] for r in all_rows], cache)
     t_embed = time.perf_counter() - t0
@@ -128,12 +125,12 @@ def main() -> int:
         "seconds": {"parse_chunk": round(t_parse, 1), "embed": round(t_embed, 1)},
     }
 
-    if not args.no_db:
+    if not no_db:
         from footnote import db
 
         conn = db.connect()
         stats["db_bytes_before"] = db.db_size_bytes(conn)
-        db.create_table(conn, table)
+        db.create_table(conn, table, hnsw=hnsw)
         t0 = time.perf_counter()
         i, peak = 0, stats["db_bytes_before"]
         for n, d in enumerate(docs, 1):
@@ -148,7 +145,7 @@ def main() -> int:
                 peak = max(peak, size)
                 if size > MAX_DB_BYTES:
                     raise SystemExit(f"DB is {size / 1e6:.0f} MB > {MAX_DB_BYTES / 1e6:.0f} MB guard; stopping")
-        if not args.limit:  # docs no longer in the set
+        if prune_missing_docs:  # docs no longer in the set
             conn.execute(f"delete from {db.table_name(table)} where not (doc_name = any(%s))", (docs,))
         conn.execute(f"vacuum analyze {db.table_name(table)}")
         stats["db_bytes_peak_sampled"] = peak
@@ -157,8 +154,25 @@ def main() -> int:
         stats["db_bytes_after"] = db.db_size_bytes(conn)
         stats["table_bytes"] = db.table_size_bytes(conn, table)
 
-    stats["cold"] = args.cold
+    stats["cold"] = cold
     stats["seconds"]["total"] = round(time.perf_counter() - t_start, 1)
+    return stats
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", required=True)
+    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--limit", type=int, default=None, help="only the first N docs (smoke test)")
+    ap.add_argument("--no-db", action="store_true", help="parse/chunk/embed only")
+    ap.add_argument("--cold", action="store_true", help="ignore parse + embedding caches (true ingest cost)")
+    args = ap.parse_args()
+    cfg = load_config(args.config)
+    table = cfg["table"]
+    docs = available_docs()
+    docs = docs[: args.limit] if args.limit else docs
+    stats = ingest(cfg, docs, table, workers=args.workers, cold=args.cold, no_db=args.no_db,
+                   prune_missing_docs=not args.limit)
     out = ROOT / "results" / f"ingest_{table}{'_cold' if args.cold else ''}{'_nodb' if args.no_db else ''}.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(stats, indent=2))

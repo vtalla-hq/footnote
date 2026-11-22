@@ -29,7 +29,7 @@ def table_name(name: str) -> str:
     return f"{SCHEMA}.{name}"
 
 
-def create_table(conn: psycopg.Connection, name: str) -> None:
+def create_table(conn: psycopg.Connection, name: str, hnsw: bool = True) -> None:
     t = table_name(name)
     short = name
     conn.execute(f"""
@@ -51,7 +51,8 @@ def create_table(conn: psycopg.Connection, name: str) -> None:
             tsv          tsvector generated always as (
                              to_tsvector('english', coalesce(section, '') || ' ' || text)) stored
         )""")
-    conn.execute(f"create index if not exists {short}_hnsw on {t} using hnsw (embedding extensions.vector_cosine_ops)")
+    if hnsw:
+        conn.execute(f"create index if not exists {short}_hnsw on {t} using hnsw (embedding extensions.vector_cosine_ops)")
     conn.execute(f"create index if not exists {short}_tsv on {t} using gin (tsv)")
     conn.execute(f"create index if not exists {short}_doc on {t} (doc_name)")
     conn.execute(f"create index if not exists {short}_co_fy on {t} (company, fiscal_year)")
@@ -80,6 +81,13 @@ def upsert_doc(conn: psycopg.Connection, name: str, doc_name: str, rows: list[di
                          where {t}.content_hash is distinct from excluded.content_hash""")
         conn.execute(f"delete from {t} where doc_name = %s and chunk_id not in (select chunk_id from _s)",
                      (doc_name,))
+
+
+def drop_table(conn: psycopg.Connection, name: str) -> None:
+    """Only for throwaway tables (CI); refuses the experiment tables."""
+    if not name.startswith("ci_"):
+        raise ValueError(f"refusing to drop non-CI table {name!r}")
+    conn.execute(f"drop table if exists {table_name(name)}")
 
 
 def db_size_bytes(conn: psycopg.Connection) -> int:

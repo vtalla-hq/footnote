@@ -59,10 +59,13 @@ def breakdown(per_q: list[dict]) -> dict[str, dict[str, dict]]:
     return out
 
 
-def run(cfg: dict, name: str, limit: int | None = None, warmup: int = 3) -> dict:
+def run(cfg: dict, name: str, limit: int | None = None, warmup: int = 3, docs: list[str] | None = None) -> dict:
+    """docs: restrict to questions whose gold doc is in this list (CI subset)."""
     from footnote.retrieve import Retriever, network_rtt_ms
 
     questions = load_questions()
+    if docs is not None:
+        questions = [q for q in questions if q["doc_name"] in set(docs)]
     report = json.loads(DOWNLOAD_REPORT.read_text()) if DOWNLOAD_REPORT.exists() else {"docs_failed": {}}
     skipped = [q["financebench_id"] for q in questions if q["doc_name"] in report["docs_failed"]]
     questions = [q for q in questions if q["financebench_id"] not in skipped][:limit]

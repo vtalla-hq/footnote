@@ -1,0 +1,62 @@
+name: retrieval-gate
+
+# Retrieval-only regression gate (no LLM calls, $0): re-ingests a fixed FinanceBench subset with
+# the PR's code into a throwaway Supabase table and fails if recall@10 drops > 1 point vs
+# results/baseline.json. See configs/ci.yaml and scripts/ci_gate.py.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: retrieval-gate        # one gate at a time: each run adds a temporary ~50 MB table
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+
+  retrieval-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (CPU torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Cache PDFs and embedding model
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/pdfs
+            ~/.cache/huggingface
+          key: footnote-ci-${{ hashFiles('configs/ci.yaml') }}
+      - name: Retrieval gate vs results/baseline.json
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CUDA_VISIBLE_DEVICES: ""
+        run: python -m scripts.ci_gate
+      - name: Upload eval result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-retrieval-result
+          path: results/ci_latest.json
+          if-no-files-found: ignore

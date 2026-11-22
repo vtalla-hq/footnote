@@ -1,0 +1,17 @@
+# README baseline: dense-only, 256-token chunks, top-5 context -> gpt-oss-120b; judged by qwen3.8-27b
+retrieval:
+  method: dense
+  table: chunks_256
+  k: 5
+  ef_search: 100
+generation:
+  model: openai/gpt-oss-120b
+  temperature: 0
+  reasoning_effort: medium
+  include_reasoning: false
+  max_tokens: 2048
+judge:
+  model: qwen/qwen3.8-27b
+  temperature: 0
+  reasoning_effort: none
+  max_tokens: 800
