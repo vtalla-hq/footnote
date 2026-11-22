@@ -1,0 +1,6 @@
+# Dense-only retrieval over 256-token chunks (bge-small cosine, HNSW)
+retrieval:
+  method: dense
+  table: chunks_256
+  k: 10
+  ef_search: 100

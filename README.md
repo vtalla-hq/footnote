@@ -63,6 +63,36 @@ RAG over SEC filings, evaluated on the FinanceBench open-source set (150 questio
 - About 1% of table cells (2,487 of 239k) contain two numbers. A random sample of 12 showed most are legitimate cells: dates, note names like "2.500% Notes due 2022", footnote markers. About 2 in 12 were real overflows, where a row has more values than detected columns.
 - 76 chunks (0.2%) are a single short line, usually a section title right before a page break.
 
+## Retrieval eval (Phase 2)
+
+`python -m eval.run --config configs/<name>.yaml` writes `results/<timestamp>_<config>.json`. The file holds the config and its hash, the git sha, per-question retrieved chunks with ranks, aggregates, breakdowns and latency. To diff runs, use `python -m eval.compare results/A.json results/B.json --by question_type`.
+
+**Metrics.** Gold for a question is its set of (doc, page) evidence pairs. A chunk hits a gold pair when the doc matches and the chunk's pages include that page. Metrics count gold pages covered, so two chunks on one page don't double count.
+- **recall@k:** the fraction of gold pages covered by the top k chunks.
+- **hit@10:** whether any gold page is covered in the top 10.
+- **MRR:** 1 / rank of the first hit.
+- **nDCG@10:** binary gain, with ideal = min(|gold|, 10).
+- **doc_hit@10:** right doc anywhere in the top 10, page ignored. Diagnostic only.
+
+The definitions are hand-checked in `tests/test_metrics.py`. Generation metrics are kept separate (Phase 4).
+
+**Latency.** `total` is end-to-end from this client: query embedding, network and DB. `db_exec` is server-side execution from `EXPLAIN ANALYZE`. The DB lives in us-east-1, about 35 ms away, and an identical re-run moved total p50 from 38 to 46 ms. So config comparisons use `db_exec` plus local compute, not wall time.
+
+### First run: dense only, 256-token chunks, top 10 (`configs/dense_256.yaml`, 150 questions, 0 skipped)
+
+| recall@1 | recall@5 | recall@10 | hit@10 | MRR | nDCG@10 | doc_hit@10 | DB exec p50 / p95 | total p50 / p95 |
+|---|---|---|---|---|---|---|---|---|
+| 0.197 | 0.393 | 0.542 | 0.613 | 0.315 | 0.355 | 0.953 | 1.2 / 1.8 ms | 38 / 92 ms |
+
+| question_type | n | recall@10 | MRR | | doc_type | n | recall@10 | MRR |
+|---|---|---|---|---|---|---|---|---|
+| domain-relevant | 50 | 0.447 | 0.239 | | 10-K | 112 | 0.512 | 0.284 |
+| metrics-generated | 50 | 0.560 | 0.313 | | 10-Q | 15 | 0.600 | 0.396 |
+| novel-generated | 50 | 0.620 | 0.392 | | 8-K | 9 | 0.889 | 0.553 |
+| | | | | | earnings | 14 | 0.500 | 0.317 |
+
+The right filing is in the top 10 for 95% of questions, but the right page for only 61%. Of the 58 questions with no page hit, 33 land more than 5 pages from the gold page in the right doc, 10 land 2–5 pages away, 8 land 1 page away, and 7 never retrieve the right doc. That points to within-document ranking (hybrid and reranking) as the next lever, not doc routing. By reasoning type, information-extraction questions get recall@10 0.726 and numerical-reasoning questions 0.465.
+
 ## Setup
 
 ```bash
