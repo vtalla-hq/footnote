@@ -107,6 +107,39 @@ The full table, CIs, ingest cost and the recommendation are in [results/SUMMARY.
 
 `*` means the 95% paired-bootstrap CI excludes 0. Hybrid hurts and reranking helps, but with 150 questions only the hybrid drop is significant.
 
+## CI regression gate (Phase 5)
+
+`.github/workflows/retrieval-gate.yml` runs on every PR. It's retrieval only (no LLM calls, $0):
+
+1. Installs CPU torch and runs `pytest`.
+2. `python -m scripts.ci_gate` **re-ingests a fixed subset with the PR's code**: 19 filings, 999 pages, covering 53 of the 150 questions across all four doc types (`configs/ci.yaml`). The data goes into a throwaway table `footnote.ci_<run id>`.
+3. That table has no HNSW index, so search is exact and deterministic. The gate runs the retrieval eval on those 53 questions and drops the table afterwards.
+4. It writes a markdown diff vs `results/baseline.json` to the job summary and **fails if recall@10 or MRR drops by more than 1 point.** MRR was added after recall@10 alone missed both test breaks (see "What didn't work").
+
+The gate re-ingests rather than querying the existing table because a PR that breaks parsing or chunking would otherwise go unnoticed. The baseline is produced the same way on CPU (`python -m scripts.ci_gate --write-baseline` with `CUDA_VISIBLE_DEVICES=""`). It scores recall@10 0.660, and an unchanged re-run reproduces every metric exactly. The DB URL comes from the `SUPABASE_DB_URL` repo secret.
+
+## What didn't work
+
+- **recall@10 alone was blind to chunking damage, and shredding chunks even raised it.** The CI gate was first specified as "fail if recall@10 drops > 1 point". Two deliberate breaks on the 53-question CI subset both passed it:
+
+  | break | recall@10 | MRR | recall@1 |
+  |---|---|---|---|
+  | baseline | 0.660 | 0.398 | 0.264 |
+  | layout table detection off (statements become prose lines) | **0.670** (+0.009) | 0.376 (−0.022) | 0.245 |
+  | chunk size 64 instead of 256 | **0.679** (+0.019) | 0.358 (−0.040) | 0.226 |
+
+  A page-level hit only needs *some* chunk from the gold page in the top 10. Tiny or shredded chunks are page-local, so ten of them hit more distinct pages, even though each is a worse unit of evidence. The rank of the first hit (MRR) does degrade, so the gate now also fails on a > 1-point MRR drop. Exact search makes that threshold noise-free. A better fix is on the v2 list.
+- **Postgres full-text hybrid made retrieval worse.** It cost 10–17 recall@10 points with every keyword scorer tried, including real BM25 computed in SQL. FinanceBench's instruction boilerplate ("…by relying on the details shown in…") is rare in filings, so IDF rewards exactly the wrong words. Details are in [results/SUMMARY.md](results/SUMMARY.md).
+- **Page hits overstate answerability for split tables.** Large statements are split into row pieces that share a caption and look alike to the embedder. For 3M's FY2018 capex, retrieval returned the financing slice of the cash-flow statement. That counts as a hit on page 60, but the capex row was in a different piece, and the generator correctly refused.
+- **pdfplumber missed most financial statements.** SEC statements have no ruling lines, so a layout detector (word positions plus right-aligned number columns) does the work, with pdfplumber only for ruled tables.
+- **The reranker can't be served for free.** bge-reranker-base takes ~0.9 s/query on a GPU but ~10.5 s on CPU, so the demo serves dense top-5 only.
+
+## v2 stretch goals
+
+- **Token-budget recall:** recall over a fixed context budget (e.g. the first ~2,500 tokens of results) instead of top-k. It removes the small-chunk advantage at the metric level.
+- **Strip question boilerplate before keyword search,** with the stripping rule fixed on a held-out split, not on the eval questions.
+- **A larger embedding window,** so 1024-token chunks aren't truncated at 512.
+
 ## Setup
 
 ```bash

@@ -77,10 +77,16 @@ def main() -> int:
     out = ROOT / "results" / "ci_latest.json"
     out.write_text(json.dumps(res, indent=1), encoding="utf-8")
     base = json.loads(BASELINE.read_text(encoding="utf-8"))
-    b, c = base["retrieval"]["aggregate"]["recall@10"], res["retrieval"]["aggregate"]["recall@10"]
-    drop = b - c
-    limit = float(cfg["max_recall10_drop"])
-    ok = drop <= limit + 1e-9
+    # Gate on recall@10 AND MRR. recall@10 alone is blind to chunking damage: shredding tables or
+    # shrinking chunks to 64 tokens left the gold page in the top 10 (recall@10 even rose) while
+    # MRR fell 2-4 points. Exact search -> identical scores every run, so 1 point is not noise.
+    checks = []
+    for metric, key in (("recall@10", "max_recall10_drop"), ("mrr", "max_mrr_drop")):
+        b = base["retrieval"]["aggregate"][metric]
+        c = res["retrieval"]["aggregate"][metric]
+        limit = float(cfg[key])
+        checks.append((metric, b, c, limit, (b - c) <= limit + 1e-9))
+    ok = all(c[4] for c in checks)
 
     from eval.compare import rank_changes, table as cmp_table
 
@@ -88,7 +94,9 @@ def main() -> int:
     lines = [
         f"## Retrieval regression gate: {'PASS' if ok else 'FAIL'}",
         "",
-        f"recall@10 **{c:.3f}** vs baseline **{b:.3f}** (change {c - b:+.3f}; allowed drop {limit:.3f}). "
+        *[f"- {'✅' if passed else '❌'} {m} **{c:.3f}** vs baseline **{b:.3f}** "
+          f"(change {c - b:+.3f}; allowed drop {lim:.3f})" for m, b, c, lim, passed in checks],
+        "",
         f"{res['n_questions']} questions over {len(cfg['docs'])} filings; chunks {res['ci']['ingest']['chunks']} "
         f"(baseline {base['ci']['ingest']['chunks']}), table chunks {res['ci']['ingest']['table_chunks']} "
         f"(baseline {base['ci']['ingest']['table_chunks']}).",
@@ -103,7 +111,9 @@ def main() -> int:
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
             fh.write(report + "\n")
     if not ok:
-        print(f"\nFAIL: recall@10 dropped {drop:.3f} (> {limit:.3f})", file=sys.stderr)
+        for m, b, c, lim, passed in checks:
+            if not passed:
+                print(f"\nFAIL: {m} dropped {b - c:.3f} (> {lim:.3f})", file=sys.stderr)
         return 1
     return 0
 

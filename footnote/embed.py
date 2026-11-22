@@ -75,5 +75,21 @@ def embed_passages(texts: list[str], cache: EmbeddingCache | None = None, batch_
     return np.stack([have[h] for h in hashes]) if texts else np.zeros((0, DIM), np.float32), len(todo)
 
 
+@lru_cache(maxsize=1)
+def get_fastembed(name: str = MODEL_NAME):
+    """ONNX build of the same model (no torch) for serverless hosts. Measured against the torch
+    model on all 150 FinanceBench questions: query-embedding cosine 1.00000 (min and mean)."""
+    import os
+
+    from fastembed import TextEmbedding
+
+    return TextEmbedding(name, cache_dir=os.environ.get("FASTEMBED_CACHE_PATH"))
+
+
 def embed_query(q: str) -> np.ndarray:
+    import os
+
+    if os.environ.get("FOOTNOTE_EMBEDDER") == "fastembed":
+        v = next(iter(get_fastembed().embed([QUERY_INSTRUCTION + q])))
+        return (v / np.linalg.norm(v)).astype(np.float32)
     return get_model().encode([QUERY_INSTRUCTION + q], normalize_embeddings=True)[0]

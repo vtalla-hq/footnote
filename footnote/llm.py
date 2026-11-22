@@ -43,8 +43,11 @@ def prompt_hash(model: str, messages: list[dict], params: dict) -> str:
                                      sort_keys=True).encode()).hexdigest()
 
 
+CACHE_DIR = Path(os.environ.get("FOOTNOTE_CACHE_DIR") or ROOT / "cache")  # /tmp on serverless
+
+
 class Groq:
-    def __init__(self, cache_path: Path = ROOT / "cache" / "llm.sqlite", max_retries: int = 8,
+    def __init__(self, cache_path: Path = CACHE_DIR / "llm.sqlite", max_retries: int = 8,
                  max_wait_s: float = 120.0, session: requests.Session | None = None):
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(cache_path)

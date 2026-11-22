@@ -23,3 +23,5 @@ node_modules/
 .vercel/
 *.log
 results/ci_latest.json
+web/node_modules/
+web/.next/
