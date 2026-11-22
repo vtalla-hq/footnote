@@ -1,14 +1,15 @@
 # CI regression gate (retrieval only, no LLM calls).
 # Re-ingests a fixed doc subset WITH THE PR'S CODE into a throwaway table (no HNSW -> exact,
 # deterministic search), runs the retrieval eval on the questions about those docs, and fails if
-# recall@10 drops more than `max_recall10_drop` vs results/baseline.json.
+# recall@10 or MRR drops more than 1 point vs results/baseline.json.
 # Subset: the 19 most question-dense filings that fit in ~1,000 pages (53 of 150 questions,
 # all four doc types), so a CPU runner finishes in minutes and the DB stays under budget.
 ingest_config: configs/ingest_256.yaml
 retrieval:
   method: dense
   k: 10
-max_recall10_drop: 0.01
+max_recall10_drop: 0.01   # fail if recall@10 drops more than 1 point
+max_mrr_drop: 0.01        # ... or MRR does (recall@10 alone missed chunking damage)
 docs:
   - 3M_2023Q2_10Q
   - AMAZON_2017_10K
