@@ -1,0 +1,4 @@
+table: chunks_1024
+chunk_size: 1024  # tokens (bge tokenizer). NB: bge-small embeds only the first 512 tokens.
+overlap: 128
+table_max: 1024

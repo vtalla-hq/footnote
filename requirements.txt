@@ -1,0 +1,18 @@
+# Python 3.11
+# torch: CPU wheel by default. For a CUDA GPU locally, install torch from
+# https://download.pytorch.org/whl/cu124 first, then `pip install -r requirements.txt`.
+torch>=2.4
+sentence-transformers>=3.0
+transformers>=4.44
+pymupdf>=1.24
+pdfplumber>=0.11
+psycopg[binary]>=3.2
+pgvector>=0.3
+python-dotenv>=1.0
+pyyaml>=6.0
+requests>=2.32
+huggingface_hub>=0.24
+pandas>=2.2
+pyarrow>=17
+tqdm>=4.66
+pytest>=8.0

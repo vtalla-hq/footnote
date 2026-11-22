@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# data (PDFs are third-party; never commit)
+data/pdfs/
+data/*.parquet
+data/*.json
+data/*.jsonl
+cache/
+.cache/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# node
+node_modules/
+.next/
+.vercel/
+*.log

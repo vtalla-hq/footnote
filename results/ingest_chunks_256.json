@@ -1,0 +1,27 @@
+{
+  "table": "chunks_256",
+  "config": {
+    "table": "chunks_256",
+    "chunk_size": 256,
+    "overlap": 32,
+    "table_max": 512
+  },
+  "docs": 84,
+  "pages": 12013,
+  "chunks": 42093,
+  "table_chunks": 8993,
+  "tokens_mean": 227.3,
+  "tokens_max": 979,
+  "chunks_over_512_tokens": 294,
+  "embeddings_computed": 0,
+  "seconds": {
+    "parse_chunk": 19.7,
+    "embed": 4.4,
+    "upsert": 581.6,
+    "total": 616.9
+  },
+  "db_bytes_before": 369096371,
+  "db_rows": 42093,
+  "db_bytes_after": 488773299,
+  "table_bytes": 456409088
+}

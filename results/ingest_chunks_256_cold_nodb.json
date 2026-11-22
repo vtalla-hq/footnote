@@ -1,0 +1,23 @@
+{
+  "table": "chunks_256",
+  "config": {
+    "table": "chunks_256",
+    "chunk_size": 256,
+    "overlap": 32,
+    "table_max": 512
+  },
+  "docs": 84,
+  "pages": 12013,
+  "chunks": 42093,
+  "table_chunks": 8993,
+  "tokens_mean": 227.3,
+  "tokens_max": 979,
+  "chunks_over_512_tokens": 294,
+  "embeddings_computed": 41955,
+  "seconds": {
+    "parse_chunk": 290.9,
+    "embed": 249.7,
+    "total": 540.8
+  },
+  "cold": true
+}
