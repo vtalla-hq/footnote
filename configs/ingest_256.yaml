@@ -1,4 +1,5 @@
 table: chunks_256
 chunk_size: 256   # tokens (bge tokenizer)
 overlap: 32
-table_max: 512    # tables up to the embedder's 512-token window stay whole; bigger ones split on rows
+table_max: 416    # tables up to this stay whole; bigger ones split on rows (header repeated).
+                  # 416 leaves room for caption + embed header inside bge's 512-token window.

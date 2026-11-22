@@ -4,24 +4,26 @@
     "table": "chunks_256",
     "chunk_size": 256,
     "overlap": 32,
-    "table_max": 512
+    "table_max": 416
   },
   "docs": 84,
   "pages": 12013,
-  "chunks": 42093,
-  "table_chunks": 8993,
-  "tokens_mean": 227.3,
-  "tokens_max": 979,
-  "chunks_over_512_tokens": 294,
-  "embeddings_computed": 0,
+  "chunks": 42137,
+  "table_chunks": 9586,
+  "tokens_mean": 227.9,
+  "tokens_max": 534,
+  "chunks_truncated_by_embedder": 1,
+  "embeddings_computed": 1002,
   "seconds": {
-    "parse_chunk": 19.7,
-    "embed": 4.4,
-    "upsert": 581.6,
-    "total": 616.9
+    "parse_chunk": 24.1,
+    "embed": 23.0,
+    "upsert": 231.3,
+    "total": 280.3
   },
-  "db_bytes_before": 369096371,
-  "db_rows": 42093,
-  "db_bytes_after": 488773299,
-  "table_bytes": 456409088
+  "db_bytes_before": 344012467,
+  "db_bytes_peak_sampled": 347666099,
+  "db_rows": 42137,
+  "db_bytes_after": 346232499,
+  "table_bytes": 313647104,
+  "cold": false
 }

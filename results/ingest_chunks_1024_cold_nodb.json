@@ -8,16 +8,16 @@
   },
   "docs": 84,
   "pages": 12013,
-  "chunks": 11676,
-  "table_chunks": 4891,
-  "tokens_mean": 806.3,
-  "tokens_max": 1125,
-  "chunks_over_512_tokens": 11380,
-  "embeddings_computed": 11673,
+  "chunks": 11719,
+  "table_chunks": 4957,
+  "tokens_mean": 807.7,
+  "tokens_max": 1064,
+  "chunks_truncated_by_embedder": 11458,
+  "embeddings_computed": 11718,
   "seconds": {
-    "parse_chunk": 290.1,
-    "embed": 86.2,
-    "total": 376.5
+    "parse_chunk": 289.9,
+    "embed": 86.9,
+    "total": 377.1
   },
   "cold": true
 }

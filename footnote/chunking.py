@@ -85,58 +85,58 @@ def chunk_elements(
     chunks: list[Chunk] = []
     section: str | None = None
     buf_section: str | None = None  # section in effect where the current chunk starts
-    buf: list[tuple[str, int, int, bool]] = []  # (text, page, tokens, is_table): atomic units
+    buf: list[tuple[str, int, int, str]] = []  # (text, page, tokens, kind) atomic units
 
-    def flush(keep_overlap: bool) -> None:
+    def tokens(items) -> int:
+        return sum(b[2] for b in items)
+
+    def flush(keep_overlap: bool, incoming: int = 0) -> None:
         nonlocal buf, buf_section
-        if buf:
-            text = "\n".join(b[0] for b in buf).strip()
-            if text:
-                chunks.append(Chunk(text=text, pages=sorted({b[1] for b in buf}), section=buf_section,
-                                    chunk_type="table" if any(b[3] for b in buf) else "text",
-                                    n_tokens=count(text)))
-        tail: list[tuple[str, int, int, bool]] = []
+        text = "\n".join(b[0] for b in buf).strip()
+        if text:
+            chunks.append(Chunk(text=text, pages=sorted({b[1] for b in buf}), section=buf_section,
+                                chunk_type="table" if any(b[3] == "table" for b in buf) else "text",
+                                n_tokens=count(text)))
+        tail: list[tuple[str, int, int, str]] = []
         if keep_overlap and overlap > 0:
-            t = 0
             for item in reversed(buf):
-                if item[3] or t + item[2] > overlap:  # tables are never carried as overlap
+                if item[3] == "table" or tokens(tail) + item[2] > overlap:  # tables never overlap
                     break
                 tail.insert(0, item)
-                t += item[2]
-            if len(tail) == len(buf):  # never carry the whole buffer forward
-                tail = []
+            if len(tail) == len(buf) or tokens(tail) + incoming > chunk_size:
+                tail = []  # never carry everything, and never let overlap push past chunk_size
         buf = tail
         buf_section = section
 
-    def buf_tokens() -> int:
-        return sum(b[2] for b in buf)
-
-    def add(item: tuple[str, int, int, bool]) -> None:
+    def add(item: tuple[str, int, int, str]) -> None:
         nonlocal buf_section
         if not buf:
             buf_section = section
         buf.append(item)
 
-    recent: list[str] = []  # trailing short lines before a table become its caption
+    def only_headings() -> bool:
+        return bool(buf) and all(b[3] == "heading" for b in buf)
 
-    def note(line: str) -> None:
-        recent.append(line)
+    recent: list[tuple[str, int]] = []  # trailing short lines (with page) -> table caption
+
+    def note(line: str, page: int) -> None:
+        recent.append((line, page))
         del recent[:-3]
 
     for el in elements:
         if el.kind == "heading":
             # a heading starts a new chunk only if the current one is already reasonably full;
             # otherwise tiny heading-bounded chunks would make chunk_size meaningless
-            if buf_tokens() >= chunk_size // 2:
+            if tokens(buf) >= chunk_size // 2:
                 flush(keep_overlap=False)
             section = el.text.strip()[:200]
             n = count(el.text)
-            if buf and buf_tokens() + n > chunk_size:
+            if buf and tokens(buf) + n > chunk_size:
                 flush(keep_overlap=False)
             if not buf:
                 buf_section = section
-            add((el.text.strip(), el.page, n, False))
-            note(el.text.strip())
+            add((el.text.strip(), el.page, n, "heading"))
+            note(el.text.strip(), el.page)
         elif el.kind == "text":
             for line in el.text.splitlines():
                 line = line.strip()
@@ -146,30 +146,43 @@ def chunk_elements(
                 parts = [line] if n <= chunk_size else _split_long(line, chunk_size, count)
                 for p in parts:
                     pn = n if len(parts) == 1 else count(p)
-                    if buf and buf_tokens() + pn > chunk_size:
-                        flush(keep_overlap=True)
-                    add((p, el.page, pn, False))
-                note(line)
+                    # a heading is never left alone in a chunk: it may push the chunk over
+                    # chunk_size by its own length (headings are <= 100 chars)
+                    if buf and tokens(buf) + pn > chunk_size and not only_headings():
+                        flush(keep_overlap=True, incoming=pn)
+                    add((p, el.page, pn, "text"))
+                note(line, el.page)
         elif el.kind == "table":
-            cap: list[str] = []
-            for ln in reversed(recent):  # up to 3 short lines, nearest first, <= 200 chars total
-                if len(ln) > 100 or ln.endswith(".") or sum(map(len, cap)) + len(ln) > 200:
+            cap: list[tuple[str, int]] = []
+            for ln, pg in reversed(recent):  # up to 3 short lines, nearest first, <= 200 chars
+                if len(ln) > 100 or ln.endswith(".") or sum(len(c[0]) for c in cap) + len(ln) > 200:
                     break
-                cap.insert(0, ln)
-            caption = "\n".join(cap)
+                if not any(ch.isalpha() for ch in ln):  # page-number footer ("59"), not a caption
+                    break
+                cap.insert(0, (ln, pg))
             for piece in split_table(el.text, table_max, count, el.header_rows):
                 pn = count(piece)
-                if buf and buf_tokens() + pn <= chunk_size:
-                    add((piece, el.page, pn, True))  # whole table/piece packed into current chunk
+                if buf and tokens(buf) + pn <= chunk_size:
+                    add((piece, el.page, pn, "table"))  # whole table/piece packed into current chunk
                     continue
+                # caption lines travel with the table (and their page counts as the chunk's page).
+                # MOVE them out of the pending buffer rather than copy, so they aren't also left
+                # behind as a tiny orphan chunk ("Years ended December 31")
+                j = 0  # longest suffix of the buffer that equals a suffix of the caption
+                while j < len(cap) and j < len(buf) and buf[-1 - j][0] == cap[-1 - j][0]:
+                    j += 1
+                if j:
+                    del buf[-j:]
                 flush(keep_overlap=False)
-                text = f"{caption}\n{piece}" if caption else piece  # caption travels with the table
-                tn = count(text)
-                if tn <= chunk_size:
-                    add((text, el.page, tn, True))
+                cap_items = [(ln, pg, count(ln), "text") for ln, pg in cap]
+                if tokens(cap_items) + pn <= chunk_size:
+                    for c in cap_items:
+                        add(c)
+                    add((piece, el.page, pn, "table"))
                 else:  # bigger than a chunk: its own chunk, still whole
-                    chunks.append(Chunk(text=text, pages=[el.page], section=section,
-                                        chunk_type="table", n_tokens=tn))
+                    text = "\n".join([c[0] for c in cap_items] + [piece])
+                    chunks.append(Chunk(text=text, pages=sorted({el.page, *(c[1] for c in cap_items)}),
+                                        section=section, chunk_type="table", n_tokens=count(text)))
             recent.clear()
         else:
             raise ValueError(f"unknown element kind {el.kind!r}")

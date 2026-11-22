@@ -19,6 +19,7 @@ import yaml
 from footnote.dataset import DOWNLOAD_REPORT, PDF_DIR, doc_metadata, load_questions, referenced_docs
 
 ROOT = Path(__file__).resolve().parent.parent
+MAX_DB_BYTES = 450_000_000  # abort before the Supabase free-tier 500 MB cap
 
 
 def load_config(path: str) -> dict:
@@ -45,10 +46,13 @@ def _parse_and_chunk(args) -> tuple[str, int, list[dict], float]:
     elements = parse_pdf(path, use_cache=not cold)
     chunks = chunk_elements(elements, chunk_size, count_tokens, overlap=overlap, table_max=table_max)
     rows = []
-    for i, c in enumerate(chunks):
+    per_page: dict[int, int] = {}
+    for c in chunks:
         embed_text = embed_header(meta, c.section) + "\n" + c.text
+        k = per_page[min(c.pages)] = per_page.get(min(c.pages), -1) + 1
         rows.append({
-            "chunk_id": f"{doc_name}::{i:05d}",
+            # page-local ids: an extra chunk early in a doc doesn't renumber the rest of the doc
+            "chunk_id": f"{doc_name}::p{min(c.pages):04d}::{k:02d}",
             "doc_name": doc_name,
             "company": meta["company"],
             "doc_type": meta["doc_type"],
@@ -59,10 +63,15 @@ def _parse_and_chunk(args) -> tuple[str, int, list[dict], float]:
             "section": c.section,
             "chunk_type": c.chunk_type,
             "n_tokens": c.n_tokens,
-            "content_hash": content_hash(embed_text),
             "text": c.text,
             "embed_text": embed_text,
+            "embed_tokens": count_tokens(embed_text) + 2,  # + [CLS]/[SEP], what bge actually sees
         })
+    for r in rows:
+        # hash of EVERY stored field (embed_text determines the embedding), so any metadata change
+        # such as a page fix triggers an update on re-ingest
+        r["content_hash"] = content_hash(json.dumps(
+            {k: r[k] for k in sorted(r) if k not in ("embed_tokens",)}, sort_keys=True))
     return doc_name, page_count(path), rows, time.perf_counter() - t0
 
 
@@ -113,7 +122,8 @@ def main() -> int:
         "table_chunks": sum(r["chunk_type"] == "table" for r in all_rows),
         "tokens_mean": round(sum(r["n_tokens"] for r in all_rows) / max(len(all_rows), 1), 1),
         "tokens_max": max((r["n_tokens"] for r in all_rows), default=0),
-        "chunks_over_512_tokens": sum(r["n_tokens"] > 512 for r in all_rows),
+        # bge-small truncates input at 512 tokens: count on the full embedded text incl. header
+        "chunks_truncated_by_embedder": sum(r["embed_tokens"] > 512 for r in all_rows),
         "embeddings_computed": computed,
         "seconds": {"parse_chunk": round(t_parse, 1), "embed": round(t_embed, 1)},
     }
@@ -125,12 +135,23 @@ def main() -> int:
         stats["db_bytes_before"] = db.db_size_bytes(conn)
         db.create_table(conn, table)
         t0 = time.perf_counter()
-        i = 0
-        for d in docs:
+        i, peak = 0, stats["db_bytes_before"]
+        for n, d in enumerate(docs, 1):
             rows = per_doc[d][1]
             db.upsert_doc(conn, table, d, rows, embs[i:i + len(rows)])
             i += len(rows)
-        conn.execute(f"analyze {db.table_name(table)}")
+            if n % 8 == 0 or n == len(docs):
+                # plain VACUUM makes dead tuples from replaced rows reusable, so a re-ingest stays
+                # near 1x table size instead of 2x (free tier caps the DB at 500 MB)
+                conn.execute(f"vacuum {db.table_name(table)}")
+                size = db.db_size_bytes(conn)
+                peak = max(peak, size)
+                if size > MAX_DB_BYTES:
+                    raise SystemExit(f"DB is {size / 1e6:.0f} MB > {MAX_DB_BYTES / 1e6:.0f} MB guard; stopping")
+        if not args.limit:  # docs no longer in the set
+            conn.execute(f"delete from {db.table_name(table)} where not (doc_name = any(%s))", (docs,))
+        conn.execute(f"vacuum analyze {db.table_name(table)}")
+        stats["db_bytes_peak_sampled"] = peak
         stats["seconds"]["upsert"] = round(time.perf_counter() - t0, 1)
         stats["db_rows"] = conn.execute(f"select count(*) from {db.table_name(table)}").fetchone()[0]
         stats["db_bytes_after"] = db.db_size_bytes(conn)

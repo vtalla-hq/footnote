@@ -13,6 +13,7 @@ Everything outside table regions becomes prose; bold / large / "Item N." lines b
 from __future__ import annotations
 
 import json
+import os
 import re
 import statistics
 from pathlib import Path
@@ -24,7 +25,7 @@ from footnote.chunking import Element
 
 ROOT = Path(__file__).resolve().parent.parent
 PARSE_CACHE = ROOT / "cache" / "parsed"
-PARSER_VERSION = "v5"
+PARSER_VERSION = "v6"
 
 NUM_RE = re.compile(r"^[($€£]*-?\$?\d[\d,]*(\.\d+)?%?\)?%?\*?$|^\$?[—–-]+$|^n/?m$|^N/?M$")
 ITEM_RE = re.compile(r"^(item|ITEM|Item)\s+\d{1,2}[A-Za-z]?\b")
@@ -73,7 +74,11 @@ def build_rows(words: list[tuple]) -> list[Row]:
         ws.sort(key=lambda w: w[0])
         cells: list[list] = []
         for w in ws:
-            if cells and w[0] - cells[-1][1] <= CELL_GAP:
+            # a currency sign, or a number following a number, always starts a new cell: column
+            # values can sit closer than CELL_GAP ("25.5%  $ 1,701" -> "25.5%" | "$1,701")
+            prev_last = cells[-1][2].split()[-1] if cells else ""
+            breaks = w[4] in CURRENCY or (is_num(w[4]) and is_num(prev_last))
+            if cells and not breaks and w[0] - cells[-1][1] <= CELL_GAP:
                 cells[-1][1] = w[2]
                 cells[-1][2] += " " + w[4]
             else:
@@ -135,6 +140,39 @@ def find_layout_tables(rows: list[Row]) -> list[tuple[int, int]]:
     return regions
 
 
+def _assign_columns(cells: list[tuple[float, str]], cols: list[float]) -> list[tuple[int, str]]:
+    """Map a row's value cells (left->right, by right edge) to columns.
+
+    Order-preserving and one value per column: pick strictly increasing column indices that
+    minimise total |right_edge - column_anchor| (small DP). If a row has more values than columns,
+    fall back to nearest-column (values sharing a column get joined).
+    """
+    n, m = len(cells), len(cols)
+    if n == 0:
+        return []
+    if n > m:
+        return [(min(range(m), key=lambda k: abs(cols[k] - x)), t) for x, t in cells]
+    inf = float("inf")
+    cost = [[inf] * m for _ in range(n)]  # cost[i][j]: best for cells[0..i] with cell i in col j
+    back = [[-1] * m for _ in range(n)]
+    for j in range(m):
+        cost[0][j] = abs(cols[j] - cells[0][0])
+    for i in range(1, n):
+        best, arg = inf, -1
+        for j in range(m):
+            if j - 1 >= 0 and cost[i - 1][j - 1] < best:
+                best, arg = cost[i - 1][j - 1], j - 1
+            if arg >= 0:
+                cost[i][j] = best + abs(cols[j] - cells[i][0])
+                back[i][j] = arg
+    j = min(range(m), key=lambda j: cost[n - 1][j])
+    out = []
+    for i in range(n - 1, -1, -1):
+        out.append((j, cells[i][1]))
+        j = back[i][j]
+    return out[::-1]
+
+
 def rows_to_markdown(rows: list[Row]) -> str:
     # anchor columns on data rows only: header years ("2018  2017") are centred, not right-aligned
     data = [r for r in rows if r.n_num and not all(YEAR_RE.match(c[2]) for c in r.cells if is_num(c[2]))]
@@ -151,19 +189,23 @@ def rows_to_markdown(rows: list[Row]) -> str:
     label_edge = min(min(c[0] for c in r.cells if is_num(c[2])) for r in rows if r.n_num) - 1
     table = []
     for r in rows:
-        label, vals = [], [""] * len(cols)
+        label, cells = [], []
         for x0, x1, t in r.cells:
-            if x1 <= label_edge and not is_num(t):
+            if (x1 <= label_edge or x1 < cols[0] - 3 * COL_TOL) and not is_num(t) and not cells:
                 label.append(t)
-                continue
-            k = min(range(len(cols)), key=lambda k: abs(cols[k] - x1))
-            if x1 < cols[0] - 3 * COL_TOL and not is_num(t) and not any(vals):
-                label.append(t)
-                continue
+            else:
+                cells.append((x1, t))
+        vals = [""] * len(cols)
+        for k, t in _assign_columns(cells, cols):
             vals[k] = f"{vals[k]} {t}".strip()
         table.append([" ".join(label)] + vals)
     esc = lambda s: s.replace("|", "\\|")
-    head, body = table[0], table[1:]
+    # the first row is a header only if it carries no real data (just years / column titles);
+    # otherwise use a blank header so a data row isn't repeated as "header" when the table splits
+    if any(is_num(c[2]) and not YEAR_RE.match(c[2]) for c in rows[0].cells):
+        head, body = [""] * len(table[0]), table
+    else:
+        head, body = table[0], table[1:]
     out = ["| " + " | ".join(esc(c) for c in head) + " |", "|" + " --- |" * len(head)]
     out += ["| " + " | ".join(esc(c) for c in r) + " |" for r in body]
     return "\n".join(out)
@@ -274,15 +316,16 @@ def parse_page(fpage, ppage, page_no: int) -> list[Element]:
         if i in in_table:
             continue
         t = r.text.strip()
-        heading = bool(ITEM_RE.match(t) or PART_RE.match(t)) or (
+        heading = (len(t) <= 100 and bool(ITEM_RE.match(t) or PART_RE.match(t))) or (
             4 <= len(t) <= 100 and any(ch.isalpha() for ch in t) and not t.endswith((".", ",", ";"))
             and (r.size >= body * 1.15 or r.bold))
         items.append((r.y0, Element("heading" if heading else "text", t, page_no)))
     items.sort(key=lambda x: x[0])
     out: list[Element] = []
     for _, el in items:
-        if el.kind == "heading" and out and out[-1].kind == "heading":
-            out[-1].text += " " + el.text  # multi-line headings
+        if (el.kind == "heading" and out and out[-1].kind == "heading"
+                and len(out[-1].text) + len(el.text) < 100 and not ITEM_RE.match(el.text)):
+            out[-1].text += " " + el.text  # multi-line headings (TOC lines stay separate)
         elif el.kind == "text" and out and out[-1].kind == "text":
             out[-1].text += "\n" + el.text
         else:
@@ -290,8 +333,20 @@ def parse_page(fpage, ppage, page_no: int) -> list[Element]:
     return out
 
 
+def _cache_key() -> str:
+    """Parser version + hash of this file, chunking.Element and library versions."""
+    import hashlib
+    import inspect
+
+    from footnote import chunking
+
+    src = Path(__file__).read_bytes() + inspect.getsource(chunking.Element).encode()
+    src += f"{fitz.VersionBind}|{pdfplumber.__version__}".encode()
+    return f"{PARSER_VERSION}-{hashlib.sha256(src).hexdigest()[:10]}"
+
+
 def parse_pdf(path: Path, use_cache: bool = True) -> list[Element]:
-    cache = PARSE_CACHE / f"{path.stem}.{PARSER_VERSION}.json"
+    cache = PARSE_CACHE / f"{path.stem}.{_cache_key()}.json"
     if use_cache and cache.exists() and cache.stat().st_mtime >= path.stat().st_mtime:
         return [Element(**e) for e in json.loads(cache.read_text(encoding="utf-8"))]
     elements: list[Element] = []
@@ -304,7 +359,9 @@ def parse_pdf(path: Path, use_cache: bool = True) -> list[Element]:
                 if ppage is not None:
                     ppage.flush_cache()
     PARSE_CACHE.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps([e.__dict__ for e in elements]), encoding="utf-8")
+    tmp = cache.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps([e.__dict__ for e in elements]), encoding="utf-8")
+    os.replace(tmp, cache)  # atomic: concurrent ingests never read a half-written file
     return elements
 
 
