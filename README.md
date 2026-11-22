@@ -93,6 +93,20 @@ The definitions are hand-checked in `tests/test_metrics.py`. Generation metrics 
 
 The right filing is in the top 10 for 95% of questions, but the right page for only 61%. Of the 58 questions with no page hit, 33 land more than 5 pages from the gold page in the right doc, 10 land 2–5 pages away, 8 land 1 page away, and 7 never retrieve the right doc. That points to within-document ranking (hybrid and reranking) as the next lever, not doc routing. By reasoning type, information-extraction questions get recall@10 0.726 and numerical-reasoning questions 0.465.
 
+## Retrieval experiments (Phase 3)
+
+The full table, CIs, ingest cost and the recommendation are in [results/SUMMARY.md](results/SUMMARY.md). The headline rows:
+
+| config | recall@10 | Δ vs dense_256 [95% CI] | MRR | compute p50 |
+|---|---|---|---|---|
+| dense, 256-token | 0.542 | — | 0.315 | 13 ms |
+| dense, 1024-token | 0.493 | −0.049 [−0.120, +0.021] | 0.288 | 19 ms |
+| hybrid (Postgres FTS + dense, RRF), 256 | 0.407 | −0.136 [−0.192, −0.083] * | 0.214 | 945 ms |
+| hybrid + bge-reranker top-50, 256 | 0.570 | +0.028 [−0.031, +0.086] | 0.342 | 2.0 s (GPU) |
+| **dense + bge-reranker top-50, 256** | **0.599** | +0.057 [−0.010, +0.120] | 0.339 | 0.93 s (GPU) / ~10.5 s (CPU) |
+
+`*` means the 95% paired-bootstrap CI excludes 0. Hybrid hurts and reranking helps, but with 150 questions only the hybrid drop is significant.
+
 ## Setup
 
 ```bash

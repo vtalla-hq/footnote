@@ -1,0 +1,8 @@
+# Dense top-50 re-scored by local cross-encoder BAAI/bge-reranker-base -> top-10, 1024-token chunks
+retrieval:
+  method: dense
+  table: chunks_1024
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rerank: true

@@ -1,0 +1,6 @@
+# Diagnostic: Postgres full-text only (lexical=or_all), 1024-token chunks
+retrieval:
+  method: lexical
+  table: chunks_1024
+  k: 10
+  lexical: or_all

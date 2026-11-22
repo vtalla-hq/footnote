@@ -89,6 +89,7 @@ def run(cfg: dict, name: str, limit: int | None = None, warmup: int = 3) -> dict
             "retrieved": [{"chunk_id": h.chunk_id, "doc": h.doc_name, "pages": h.pages,
                            "type": h.chunk_type, "score": round(h.score, 4)} for h in res.hits],
             "first_hit_rank": first_hit_rank(ranked, gold),
+            **({"company_filter": res.info["company_filter"]} if res.info.get("company_filter") else {}),
             "metrics": score(ranked, gold),
             "latency_ms": {k: round(v, 1) for k, v in res.timings_ms.items()},
         })

@@ -1,0 +1,10 @@
+# Hybrid: dense top-50 + Okapi BM25 top-50 (Postgres tsvector + df table), RRF k=60, 1024-token chunks
+retrieval:
+  method: hybrid
+  table: chunks_1024
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rrf_k: 60
+  lexical: bm25
+  max_df: 0.5

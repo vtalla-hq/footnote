@@ -1,0 +1,7 @@
+# Diagnostic: Okapi BM25 (k1=1.2, b=0.75) computed in Postgres from the tsvector, 256-token chunks
+retrieval:
+  method: lexical
+  table: chunks_256
+  k: 10
+  lexical: bm25
+  max_df: 0.5

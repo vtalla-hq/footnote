@@ -1,0 +1,10 @@
+# Optional: hybrid + rerank, restricted to the company named in the question, 256-token chunks
+retrieval:
+  method: hybrid
+  table: chunks_256
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rrf_k: 60
+  rerank: true
+  prefilter: company

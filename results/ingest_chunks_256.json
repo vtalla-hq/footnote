@@ -13,17 +13,17 @@
   "tokens_mean": 227.9,
   "tokens_max": 534,
   "chunks_truncated_by_embedder": 1,
-  "embeddings_computed": 1002,
+  "embeddings_computed": 0,
   "seconds": {
-    "parse_chunk": 24.1,
-    "embed": 23.0,
-    "upsert": 231.3,
-    "total": 280.3
+    "parse_chunk": 33.4,
+    "embed": 5.3,
+    "upsert": 256.2,
+    "total": 296.9
   },
-  "db_bytes_before": 344012467,
-  "db_bytes_peak_sampled": 347666099,
+  "db_bytes_before": 30660275,
+  "db_bytes_peak_sampled": 304854707,
   "db_rows": 42137,
-  "db_bytes_after": 346232499,
-  "table_bytes": 313647104,
+  "db_bytes_after": 304854707,
+  "table_bytes": 272203776,
   "cold": false
 }

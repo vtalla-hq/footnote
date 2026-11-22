@@ -1,0 +1,10 @@
+retrieval:
+  method: hybrid
+  table: chunks_1024
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rrf_k: 60
+  lexical: idf
+  max_df: 0.10
+  max_terms: 8

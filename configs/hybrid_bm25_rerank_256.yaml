@@ -1,0 +1,11 @@
+# Hybrid (dense + Okapi BM25, RRF) top-50 re-scored by BAAI/bge-reranker-base -> top-10, 256-token chunks
+retrieval:
+  method: hybrid
+  table: chunks_256
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rrf_k: 60
+  lexical: bm25
+  max_df: 0.5
+  rerank: true

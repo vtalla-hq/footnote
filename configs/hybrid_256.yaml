@@ -1,0 +1,8 @@
+# Hybrid: dense top-50 + Postgres full-text top-50, fused with RRF (k=60), over 256-token chunks
+retrieval:
+  method: hybrid
+  table: chunks_256
+  k: 10
+  ef_search: 100
+  candidates: 50
+  rrf_k: 60
