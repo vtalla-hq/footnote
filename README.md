@@ -2,7 +2,9 @@
 
 RAG over SEC filings, evaluated on the FinanceBench open-source set (150 questions, 84 filings). The eval harness is the core of the project. The chatbot comes second.
 
-> Status: Phases 1–5 done (ingest, retrieval eval, experiments, generation eval, CI gate). Phase 6 (hosted demo) is in progress. Every number below was measured.
+**Live demo: [footnote-rosy.vercel.app](https://footnote-rosy.vercel.app)** (Next.js + Python function on Vercel, pgvector on Supabase, Groq for generation). Measured 2026-11-25: ~5 s for the first request after a deploy, ~2 s warm.
+
+> Status: Phases 1–6 done (ingest, retrieval eval, experiments, generation eval, CI gate, hosted demo). Every number below was measured.
 
 ## Data and license
 
