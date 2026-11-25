@@ -94,3 +94,56 @@ Free serverless hosts and GitHub Actions runners are CPU-only.
 - **Approximate search:** HNSW is approximate (ef_search=100). Rebuilding the index shifted recall@1/MRR by about ±0.006 for the same config.
 - **Retrieval scope:** retrieval searches all 84 filings in one shared index, the harder FinanceBench "shared vector store" setting.
 - **Network noise:** e2e latency includes network to us-east-1, so compare configs on the compute column.
+
+# Phase 4: generation (measured 2026-11-23 / 2026-11-25)
+
+Generator `openai/gpt-oss-120b` on Groq (temperature 0, reasoning_effort medium), constrained to the top-5 retrieved chunks, with every claim needing a valid `[chunk_id]` citation. A bad citation gets one regeneration, then a refusal. The judge is a different model, `qwen/qwen3.8-27b`, with 1% numeric tolerance. Refusals count as wrong. Both runs: 150/150 questions, 0 errors, 0 skipped. Reproduce with `python -m scripts.gen_summary <A.json> <B.json>`.
+
+| config | correct | partial | incorrect | refused | accuracy | wrong or refused |
+|---|---|---|---|---|---|---|
+| baseline: dense top-5 (`gen_dense_256_top5`) | 48 | 9 | 18 | 75 | **0.320** | 0.620 |
+| dense top-50 → bge-reranker → top-5 (`gen_dense_rerank_256_top5`) | 54 | 4 | 21 | 71 | **0.360** | 0.613 |
+| FinanceBench paper, GPT-4-Turbo + shared vector store | | | | | | 0.81 |
+
+Reranking: +0.040 accuracy, 95% paired bootstrap CI [−0.033, +0.113], so **not significant at n=150**.
+
+The paper's figure is quoted from Islam et al. 2023 (arXiv 2311.11944): "GPT-4-Turbo used with a retrieval system incorrectly answered or refused to answer 81% of questions." It isn't a like-for-like comparison: the paper graded by hand, we grade with an LLM judge, and the models differ.
+
+| question_type | n | baseline | rerank |
+|---|---|---|---|
+| domain-relevant | 50 | 0.28 | 0.28 |
+| metrics-generated | 50 | 0.30 | 0.30 |
+| novel-generated | 50 | 0.38 | 0.50 |
+
+| doc_type | n | baseline | rerank |
+|---|---|---|---|
+| 10-K | 112 | 0.31 | 0.31 |
+| 10-Q | 15 | 0.33 | 0.33 |
+| 8-K | 9 | 0.56 | 0.78 |
+| earnings | 14 | 0.21 | 0.50 |
+
+**Most of the loss is retrieval, not generation.** The questions split by whether a gold page made it into the top-5 context:
+
+| config | gold page in context | n | correct | partial | incorrect | refused |
+|---|---|---|---|---|---|---|
+| baseline | yes | 66 | 35 (53%) | 5 | 4 | 22 |
+| baseline | no | 84 | 13 (15%) | 4 | 14 | 53 |
+| rerank | yes | 69 | 35 (51%) | 2 | 11 | 21 |
+| rerank | no | 81 | 19 (23%) | 2 | 10 | 50 |
+
+- Without the gold page, the model mostly refuses (53 of 84). It answers correctly only when another page carries the same figure.
+- With the gold page, about half are correct, and a third are still refused. Many of those are split statements, where the needed row is in a sibling chunk (see "What didn't work").
+
+**Citations**
+
+| | baseline | rerank |
+|---|---|---|
+| answers valid on the first attempt | 133 | 125 |
+| answers regenerated once | 17 | 25 |
+| refused after an invalid regeneration | 4 | 7 |
+| attempts citing an id not in the context | 1 | 1 |
+| mean chunks cited per answer | 1.41 | 1.52 |
+
+**Judge spot check (by hand, 9 random verdicts from the rerank run).** 8 of the 9 match my own reading. One is too lenient: the Best Buy store count (00460) was marked "partially" with wrong numbers. Accuracy counts only "correct", so this doesn't inflate it. The judge has not been audited beyond this sample.
+
+**Cost:** $0. Both runs ran on Groq's free tier, about 200K tokens/day for gpt-oss-120b. That cap is why they took about 2.5 days.

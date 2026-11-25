@@ -2,7 +2,7 @@
 
 RAG over SEC filings, evaluated on the FinanceBench open-source set (150 questions, 84 filings). The eval harness is the core of the project. The chatbot comes second.
 
-> Status: Phase 1 (ingest). Results tables will appear here once the eval harness lands. No numbers are shown until they are measured.
+> Status: Phases 1–5 done (ingest, retrieval eval, experiments, generation eval, CI gate). Phase 6 (hosted demo) is in progress. Every number below was measured.
 
 ## Data and license
 
@@ -106,6 +106,20 @@ The full table, CIs, ingest cost and the recommendation are in [results/SUMMARY.
 | **dense + bge-reranker top-50, 256** | **0.599** | +0.057 [−0.010, +0.120] | 0.339 | 0.93 s (GPU) / ~10.5 s (CPU) |
 
 `*` means the 95% paired-bootstrap CI excludes 0. Hybrid hurts and reranking helps, but with 150 questions only the hybrid drop is significant.
+
+## Answer accuracy (Phase 4)
+
+gpt-oss-120b on Groq answers from the top-5 chunks. Every claim must cite a chunk id, and a bad citation gets one regeneration, then a refusal. A different model, qwen3.8-27b, judges with 1% numeric tolerance, and refusals count as wrong. Both runs cover all 150 questions with 0 errors. Details and CIs are in [results/SUMMARY.md](results/SUMMARY.md#phase-4-generation-measured-2026-11-23--2026-11-25).
+
+| config | accuracy | wrong or refused |
+|---|---|---|
+| baseline: dense top-5 | 0.320 | 0.620 |
+| dense top-50 → bge-reranker → top-5 | 0.360 | 0.613 |
+| FinanceBench paper: GPT-4-Turbo, shared vector store (human-graded) | — | 0.81 |
+
+- **Reranking:** +4 points, 95% CI [−3.3, +11.3], so not significant.
+- **Retrieval is the bottleneck.** With a gold page in the context, about 52% of answers are correct. Without one, 15–23% are.
+- **Refusals over hallucination:** most misses are refusals (71–75 of 150), not wrong answers (18–21).
 
 ## CI regression gate (Phase 5)
 
