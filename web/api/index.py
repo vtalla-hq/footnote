@@ -8,6 +8,10 @@ import os
 os.environ.setdefault("FOOTNOTE_EMBEDDER", "fastembed")
 os.environ.setdefault("FOOTNOTE_CACHE_DIR", "/tmp/footnote")
 os.environ.setdefault("FASTEMBED_CACHE_PATH", "/tmp/fastembed")
+# huggingface_hub (used by fastembed to download the model) writes to ~/.cache, which is read-only on Vercel
+os.environ.setdefault("HF_HOME", "/tmp/huggingface")
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
