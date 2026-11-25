@@ -15,6 +15,9 @@ SCHEMA = "footnote"
 def connect() -> psycopg.Connection:
     load_dotenv()
     url = os.environ.get("SUPABASE_DB_URL")
+    if url:
+        # Pasted values sometimes pick up line breaks, spaces or quotes.
+        url = "".join(url.split()).strip("\"'")
     if not url or "<password>" in url:
         raise RuntimeError("SUPABASE_DB_URL is not set in .env (see .env.example)")
     conn = psycopg.connect(url, autocommit=True, prepare_threshold=None)
